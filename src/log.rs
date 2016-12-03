@@ -13,7 +13,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use Request;
-use Response;
+use RawResponse;
 
 /// Adds a log entry to the given writer at each request.
 ///
@@ -32,9 +32,10 @@ use Response;
 ///     })
 /// }
 /// ```
-pub fn log<W, F>(rq: &Request, mut output: W, f: F) -> Response
+pub fn log<W, F, R>(rq: &Request, mut output: W, f: F) -> RawResponse
     where W: Write,
-          F: FnOnce() -> Response
+          F: FnOnce() -> R,
+          R: Into<RawResponse>
 {
     let start_time = Instant::now();
     let rq_line = format!("{} {}", rq.method(), rq.raw_url());
@@ -48,6 +49,7 @@ pub fn log<W, F>(rq: &Request, mut output: W, f: F) -> Response
 
     match response {
         Ok(response) => {
+            let response: RawResponse = response.into();
             let _ = writeln!(output, "{} - {} - {}", rq_line, elapsed_time, response.status_code);
             response
         },
