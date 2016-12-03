@@ -19,6 +19,10 @@ use rustc_serialize;
 /// The response is only sent to the client when you return the `RawResponse` object from your
 /// request handler. This means that you are free to create as many `RawResponse` objects as you
 /// want.
+///
+/// Contrary to a `Response`, a `RawResponse` may not be HTTP-compliant. Rouille blindly trusts the
+/// `RawResponse` and doesn't perform any check. For this reason, you are encouraged to manipulate
+/// a `Response` instead of a `RawResponse` when possible.
 pub struct RawResponse {
     /// The status code to return to the user.
     pub status_code: u16,
@@ -35,8 +39,48 @@ pub struct RawResponse {
 }
 
 impl From<Response> for RawResponse {
-    fn from(response: Response) -> RawResponse {
-        unimplemented!()
+    fn from(mut response: Response) -> RawResponse {
+        // In order to allocate only what we need, we need to calculate the number of headers.
+        let num_headers =
+            if response.allow.is_some() || response.status_code == 405 { 1 } else { 0 } +
+            if response.content_type.is_some() { 1 } else { 0 } +
+            if response.location.is_some() { 1 } else { 0 } +
+            if response.content_language.is_some() { 1 } else { 0 };
+
+        let headers = {
+            let mut headers = Vec::with_capacity(num_headers);
+
+            if let Some(ref allow) = response.allow {
+                headers.push(("Allow".into(), allow.join(", ".into()));
+            } else if response.status_code == 405 {
+                headers.push(("Allow".into(), "".into()));
+            }
+
+            if let Some(content_type) = response.content_type {
+                headers.push(("Content-Type".into(), content_type));
+            }
+
+            if let Some(location) = response.location {
+                headers.push(("Location".into(), location));
+            }
+
+            if let Some(ref www_authenticate) = response.www_authenticate {
+
+            } else if response.status_code == 401 {
+                response.status_code = 403;
+            }
+
+            headers
+        };
+
+        // Detects bugs with the number of headers calculated above.
+        debug_assert_eq!(headers.len(), headers.capacity());
+
+        RawResponse {
+            status_code: response.status_code,
+            headers: headers,
+            data: response.data,
+        }
     }
 }
 
@@ -48,12 +92,72 @@ pub struct Response {
     /// The status code to return to the user.
     pub status_code: u16,
 
-    /// List of headers to be returned in the response.
+    /// List of methods (`GET`, `POST`, etc.) supported for the target resource.
     ///
-    /// Note that important headers such as `Connection` or `Content-Length` will be ignored
-    /// from this list.
-    // TODO: document precisely which headers
-    pub headers: Vec<(String, String)>,
+    /// A value of `None` indicates that no list will be returned to the client. A value of `Some`
+    /// with an empty `Vec` means that no method is allowed ; in other words, the resource is
+    /// disabled.
+    ///
+    /// With a 405 response code, the server must always return a `Allow` header. In this case,
+    /// rouille will return an empty list even if you put `None` here.
+    pub allow: Option<Vec<Cow<'static, str>>>,
+
+    /// If set, indicates that the same request may result in a different outcome if the request
+    /// supplies credentials or different credentials.
+    ///
+    /// This corresponds to the `WWW-Authenticate` header.
+    ///
+    /// When the status code is 401, it is mandatory for the server to return a `WWW-Authenticate`
+    /// header. In order to be compliant, rouille will automatically turn status code 401 into 403
+    /// if you didn't supply this header.
+    pub www_authenticate: (),
+
+    pub content_disposition_filename: Option<Cow<'static, str>>,
+
+    pub content_disposition_attachment: bool,
+
+    /// Specifies the MIME type of the content.
+    ///
+    /// This corresponds to the `Content-Type` header.
+    ///
+    /// If you don't specify this, the browser may either interpret the data as
+    /// `application/octet-stream` or attempt to determine the type of data by analyzing the body.
+    /// When the body is not empty, it is strongly recommended that you always specify a
+    /// content-type. But in some situations it may not be possible to know what the content-type
+    /// is.
+    ///
+    /// Rouille doesn't check whether the MIME type is valid.
+    // TODO: ^ decide whether that's a good idea ; specs say it's strict, see https://tools.ietf.org/html/rfc2046
+    pub content_type: Option<Cow<'static, str>>,
+
+    /// 
+    ///
+    /// This corresponds to the `Location` header.
+    pub location: Option<Cow<'static, str>>,
+
+    /// Specifies the language of the content.
+    ///
+    /// The language must be a *language tag*, as defined by
+    /// [RFC 5646](https://tools.ietf.org/html/rfc5646). For example `en-US`. Rouille doesn't check
+    /// whether the language tag is valid.
+    ///
+    /// This corresponds to the `Content-Language` header.
+    pub content_language: Option<Cow<'static, str>>,
+
+    pub cache_control: CacheControl,
+
+    /// Specifies whether any intermediate is allowed to transform the response in order to save
+    /// space or bandwidth.
+    ///
+    /// This corresponds to `Cache-Control: no-transform`.
+    ///
+    /// If the value is `true`, intermediate caches are not allowed to transform the response.
+    /// The default value is `false`.
+    ///
+    /// You are encouraged to only set this to `true` in very specific situations where the
+    /// response must match bit-by-bit. Do not set this to `true` just because you are worried
+    /// a cache may do something wrong.
+    pub no_transform: bool,
 
     /// An opaque type that contains the body of the response.
     pub data: ResponseBody,
@@ -119,7 +223,7 @@ impl Response {
     pub fn html<D>(content: D) -> Response where D: Into<Vec<u8>> {
         Response {
             status_code: 200,
-            headers: vec![("Content-Type".to_owned(), "text/html; charset=utf8".to_owned())],
+            content_type: Some("text/html; charset=utf8".into()),
             data: ResponseBody::from_data(content),
         }
     }
@@ -208,6 +312,23 @@ impl Response {
         }
     }
 
+    /// Builds an empty `Response` with a 200 status code.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use rouille::Response;
+    /// let response = Response::empty_200();
+    /// ```
+    #[inline]
+    pub fn empty_200() -> Response {
+        Response {
+            status_code: 200,
+            headers: vec![],
+            data: ResponseBody::empty()
+        }
+    }
+
     /// Builds an empty `Response` with a 400 status code.
     ///
     /// # Example
@@ -255,6 +376,22 @@ impl Response {
         self.status_code = code;
         self
     }
+}
+
+pub enum CacheControl {
+    Public {
+        max_age: u64,
+        must_revalidate: bool,
+    },
+    Private {
+        max_age: u64,
+        must_revalidate: bool,
+    },
+    NoCache {
+        max_age: u64,
+        must_revalidate: bool,
+    },
+    NoStore,
 }
 
 /// An opaque type that represents the body of a response.
