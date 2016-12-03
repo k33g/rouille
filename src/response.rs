@@ -7,13 +7,40 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
+use std::borrow::Cow;
 use std::io;
 use std::io::Cursor;
 use std::io::Read;
 use std::fs::File;
 use rustc_serialize;
 
-/// Contains a prototype of a response.
+/// Contains a prototype of a response. Headers are weakly-typed.
+///
+/// The response is only sent to the client when you return the `RawResponse` object from your
+/// request handler. This means that you are free to create as many `RawResponse` objects as you
+/// want.
+pub struct RawResponse {
+    /// The status code to return to the user.
+    pub status_code: u16,
+
+    /// List of headers to be returned in the response.
+    ///
+    /// Note that important headers such as `Connection` or `Content-Length` will be ignored
+    /// from this list.
+    // TODO: document precisely which headers
+    pub headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+
+    /// An opaque type that contains the body of the response.
+    pub data: ResponseBody,
+}
+
+impl From<Response> for RawResponse {
+    fn from(response: Response) -> RawResponse {
+        unimplemented!()
+    }
+}
+
+/// Contains a prototype of a response. Headers are strongly-typed.
 ///
 /// The response is only sent to the client when you return the `Response` object from your
 /// request handler. This means that you are free to create as many `Response` objects as you want.
