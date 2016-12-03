@@ -60,7 +60,7 @@ use std::net::TcpStream;
 use std::net::ToSocketAddrs;
 
 use Request;
-use Response;
+use RawResponse;
 use ResponseBody;
 
 /// Error that can happen when dispatching the request to another server.
@@ -98,7 +98,7 @@ pub struct ProxyConfig<A> {
 ///
 /// > **Note**: SSL is not supported.
 // TODO: ^
-pub fn proxy<A>(request: &Request, config: ProxyConfig<A>) -> Result<Response, ProxyError>
+pub fn proxy<A>(request: &Request, config: ProxyConfig<A>) -> Result<RawResponse, ProxyError>
     where A: ToSocketAddrs
 {
     let mut socket = try!(TcpStream::connect(config.addr));
@@ -164,11 +164,11 @@ pub fn proxy<A>(request: &Request, config: ProxyConfig<A>) -> Result<Response, P
             };
             let val = &val[1..];
 
-            headers.push((header.to_owned(), val.to_owned()));
+            headers.push((header.to_owned().into(), val.to_owned().into()));
         }
     }
 
-    Ok(Response {
+    Ok(RawResponse {
         status_code: status,
         headers: headers,
         data: ResponseBody::from_reader(socket),
