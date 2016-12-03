@@ -24,9 +24,9 @@ use RawResponse;
 ///
 /// ```
 /// use std::io;
-/// use rouille::{Request, Response};
+/// use rouille::{Request, Response, RawResponse};
 ///
-/// fn handle(request: &Request) -> Response {
+/// fn handle(request: &Request) -> RawResponse {
 ///     rouille::log(request, io::stdout(), || {
 ///         Response::text("hello world")
 ///     })

@@ -21,10 +21,10 @@
 //! client.
 //!
 //! ```
-//! use rouille::{Request, Response};
+//! use rouille::{Request, Response, RawResponse};
 //! use rouille::proxy;
 //!
-//! fn handle_request(request: &Request) -> Response {
+//! fn handle_request(request: &Request) -> RawResponse {
 //!     let config = match request.header("Host") {
 //!         Some(ref h) if h == "domain1.com" => {
 //!             proxy::ProxyConfig {
@@ -40,12 +40,12 @@
 //!             }
 //!         },
 //!
-//!         _ => return Response::empty_404()
+//!         _ => return Response::empty_404().into()
 //!     };
 //!
 //!     match proxy::proxy(request, config) {
 //!         Ok(r) => r,
-//!         Err(_) => Response::text("Bad gateway").with_status_code(500),
+//!         Err(_) => Response::text("Bad gateway").with_status_code(500).into(),
 //!     }
 //! }
 //! ```
